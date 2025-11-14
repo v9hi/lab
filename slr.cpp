@@ -9,25 +9,25 @@ using namespace std;
 #define MAX 100
 #define STATES 20
 #define SYMBOLS 10
-// Grammar rules
+
 struct Production
 {
     char lhs;
     string rhs;
 };
-// Item structure
+
 struct Item
 {
     char lhs;
     string rhs;
     int dot_position;
 };
-// State structure
+
 struct State
 {
     vector<Item> items;
 };
-// Stack structure for parsing
+
 struct Stack
 {
     vector<int> items;
@@ -40,7 +40,7 @@ struct Stack
     int top() { return items.empty() ? -1 : items.back(); }
     bool empty() { return items.empty(); }
 };
-// Global variables
+
 vector<Production> grammar;
 vector<State> states;
 vector<char> terminals;
@@ -49,7 +49,7 @@ string action[STATES][SYMBOLS];
 int goto_table[STATES][SYMBOLS];
 map<char, set<char>> first_sets;
 map<char, set<char>> follow_sets;
-// ---------- Utility functions ----------
+
 bool item_exists(State &state, Item item)
 {
     for (auto &it : state.items)
@@ -94,7 +94,7 @@ bool contains_char(vector<char> &vec, char c)
     }
     return false;
 }
-// Check if a string of symbols can derive epsilon
+
 bool can_derive_epsilon(const string &str)
 {
     if (str.empty())
@@ -104,17 +104,17 @@ bool can_derive_epsilon(const string &str)
         if (is_terminal(c))
             return false;
         if (first_sets[c].find('#') == first_sets[c].end())
-            return false; // '#' represents epsilon
+            return false;
     }
     return true;
 }
-// Compute FIRST set for a string of symbols
+
 set<char> compute_first_of_string(const string &str)
 {
     set<char> result;
     if (str.empty())
     {
-        result.insert('#'); // epsilon
+        result.insert('#');
         return result;
     }
     for (int i = 0; i < str.length(); i++)
@@ -127,7 +127,7 @@ set<char> compute_first_of_string(const string &str)
         }
         else
         {
-            // Add FIRST(symbol) - {epsilon} to result
+
             for (char c : first_sets[symbol])
             {
                 if (c != '#')
@@ -135,12 +135,12 @@ set<char> compute_first_of_string(const string &str)
                     result.insert(c);
                 }
             }
-            // If symbol cannot derive epsilon, stop
+
             if (first_sets[symbol].find('#') == first_sets[symbol].end())
             {
                 break;
             }
-            // If we've processed all symbols and all can derive epsilon
+
             if (i == str.length() - 1)
             {
                 result.insert('#');
@@ -149,11 +149,11 @@ set<char> compute_first_of_string(const string &str)
     }
     return result;
 }
-// ---------- FIRST and FOLLOW sets ----------
+
 void compute_first_sets()
 {
     cout << "Computing FIRST sets...\n";
-    // Initialize FIRST sets
+
     first_sets.clear();
     for (char nt : non_terminals)
     {
@@ -166,16 +166,16 @@ void compute_first_sets()
         for (const Production &prod : grammar)
         {
             if (prod.lhs == 'Q')
-                continue; // Skip augmented production for FIRST computation
+                continue;
             set<char> old_first = first_sets[prod.lhs];
             if (prod.rhs.empty())
             {
-                // Empty production: A -> epsilon
+
                 first_sets[prod.lhs].insert('#');
             }
             else
             {
-                // For production A -> X1X2...Xk
+
                 bool all_have_epsilon = true;
                 for (int i = 0; i < prod.rhs.length(); i++)
                 {
@@ -188,7 +188,7 @@ void compute_first_sets()
                     }
                     else
                     {
-                        // Add FIRST(Xi) - {epsilon} to FIRST(A)
+
                         for (char c : first_sets[symbol])
                         {
                             if (c != '#')
@@ -196,7 +196,7 @@ void compute_first_sets()
                                 first_sets[prod.lhs].insert(c);
                             }
                         }
-                        // If Xi doesn't have epsilon, stop
+
                         if (first_sets[symbol].find('#') == first_sets[symbol].end())
                         {
                             all_have_epsilon = false;
@@ -204,13 +204,13 @@ void compute_first_sets()
                         }
                     }
                 }
-                // If all symbols can derive epsilon, add epsilon to FIRST(A)
+
                 if (all_have_epsilon)
                 {
                     first_sets[prod.lhs].insert('#');
                 }
             }
-            // Check if FIRST set changed
+
             if (first_sets[prod.lhs] != old_first)
             {
                 changed = true;
@@ -221,16 +221,16 @@ void compute_first_sets()
 void compute_follow_sets()
 {
     cout << "Computing FOLLOW sets...\n";
-    // Initialize FOLLOW sets
+
     follow_sets.clear();
     for (char nt : non_terminals)
     {
         if (nt != 'Q')
-        { // Don't compute FOLLOW for augmented start symbol
+        {
             follow_sets[nt] = set<char>();
         }
     }
-    // Add $ to FOLLOW of start symbol
+
     follow_sets['S'].insert('$');
     bool changed = true;
     while (changed)
@@ -239,17 +239,16 @@ void compute_follow_sets()
         for (const Production &prod : grammar)
         {
             if (prod.lhs == 'Q')
-                continue; // Skip augmented production
-            // For production A -> αBβ
+                continue;
             for (int i = 0; i < prod.rhs.length(); i++)
             {
                 char symbol = prod.rhs[i];
                 if (is_non_terminal(symbol) && symbol != 'Q')
                 {
                     set<char> old_follow = follow_sets[symbol];
-                    // Get β (rest of the string after B)
+
                     string beta = prod.rhs.substr(i + 1);
-                    // Add FIRST(β) - {epsilon} to FOLLOW(B)
+
                     set<char> first_beta = compute_first_of_string(beta);
                     for (char c : first_beta)
                     {
@@ -258,7 +257,7 @@ void compute_follow_sets()
                             follow_sets[symbol].insert(c);
                         }
                     }
-                    // If β can derive epsilon, add FOLLOW(A) to FOLLOW(B)
+
                     if (can_derive_epsilon(beta))
                     {
                         for (char c : follow_sets[prod.lhs])
@@ -266,7 +265,7 @@ void compute_follow_sets()
                             follow_sets[symbol].insert(c);
                         }
                     }
-                    // Check if FOLLOW set changed
+
                     if (follow_sets[symbol] != old_follow)
                     {
                         changed = true;
@@ -288,7 +287,7 @@ void print_first_follow()
     for (char nt : non_terminals)
     {
         if (nt == 'Q')
-            continue; // Skip augmented start symbol
+            continue;
         cout << "FIRST(" << nt << ") = { ";
         for (char c : first_sets[nt])
         {
@@ -307,7 +306,7 @@ void print_first_follow()
     for (char nt : non_terminals)
     {
         if (nt == 'Q')
-            continue; // Skip augmented start symbol
+            continue;
         cout << "FOLLOW(" << nt << ") = { ";
         for (char c : follow_sets[nt])
         {
@@ -316,7 +315,7 @@ void print_first_follow()
         cout << "}\n";
     }
 }
-// ---------- Printing ----------
+
 void print_state(int index)
 {
     cout << "State " << index << ":\n";
@@ -338,7 +337,7 @@ void print_state(int index)
     }
     cout << "\n";
 }
-// ---------- Closure & GOTO ----------
+
 void closure(State &state)
 {
     bool added;
@@ -419,7 +418,7 @@ int state_index(State &new_state)
     }
     return -1;
 }
-// ---------- Build states ----------
+
 void build_states()
 {
     states.clear();
@@ -473,10 +472,10 @@ void build_states()
         }
     }
 }
-// ---------- SLR Parsing Table ----------
+
 void build_slr_parsing_table()
 {
-    // Initialize tables
+
     for (int i = 0; i < STATES; i++)
     {
         for (int j = 0; j < SYMBOLS; j++)
@@ -485,27 +484,27 @@ void build_slr_parsing_table()
             goto_table[i][j] = -1;
         }
     }
-    // Compute FIRST and FOLLOW sets
+
     compute_first_follow_sets();
-    // Build states
+
     build_states();
-    // Fill ACTION and GOTO tables using SLR method
+
     for (int i = 0; i < states.size(); i++)
     {
         for (auto &it : states[i].items)
         {
             if (it.dot_position == it.rhs.size())
             {
-                // Complete item - add reduce actions
+
                 if (it.lhs == 'Q' && it.rhs == "S")
                 {
-                    // Accept action
+
                     int idx = symbol_index('$', terminals);
                     action[i][idx] = "acc";
                 }
                 else
                 {
-                    // Find production index
+
                     int prod_idx = -1;
                     for (int k = 0; k < grammar.size(); k++)
                     {
@@ -517,7 +516,7 @@ void build_slr_parsing_table()
                     }
                     if (prod_idx != -1)
                     {
-                        // Add reduce action for all symbols in FOLLOW(A)
+
                         for (char follow_sym : follow_sets[it.lhs])
                         {
                             int t_idx = symbol_index(follow_sym, terminals);
@@ -569,7 +568,7 @@ void print_parsing_table()
         cout << "\n";
     }
 }
-// ---------- Parsing ----------
+
 void parse_input(string input_str)
 {
     Stack state_stack, symbol_stack;
@@ -626,17 +625,17 @@ void parse_input(string input_str)
 }
 int main()
 {
-    // Define grammar rules (excluding augmented one)
+
     Production p1 = {'S', "CC"};
     grammar.push_back(p1);
     Production p2 = {'C', "cC"};
     grammar.push_back(p2);
     Production p3 = {'C', "d"};
     grammar.push_back(p3);
-    // Augmented production: S' -> S (internally Q -> S)
+
     Production p4 = {'Q', "S"};
     grammar.push_back(p4);
-    // Terminals and non-terminals
+
     terminals.push_back('c');
     terminals.push_back('d');
     terminals.push_back('$');
@@ -647,23 +646,23 @@ int main()
     cout << "S -> CC\n";
     cout << "C -> cC\n";
     cout << "C -> d\n";
-    // Build SLR parsing table
+
     build_slr_parsing_table();
-    // Print FIRST and FOLLOW sets
+
     print_first_follow();
-    // Print canonical collection
+
     cout << "\nCanonical Collection of LR(0) Items:\n";
     for (int i = 0; i < states.size(); i++)
     {
         print_state(i);
     }
-    // Print parsing table
+
     print_parsing_table();
-    // Input string
+
     string input_str;
     cout << "\nEnter input string (e.g. ccdd): ";
     cin >> input_str;
-    // Parse the input
+
     parse_input(input_str);
     return 0;
 }
