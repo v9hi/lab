@@ -1,444 +1,412 @@
-#include <iostream>
-#include <string>
-#include <vector>
-#include <set>
-#include <map>
-#include <sstream>
-#include <algorithm>
-#include <iomanip>
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
 
-using namespace std;
+#define MAXP 50
+#define MAXSYM 100
+#define MAXLEN 200
 
-vector<string> tokenize(const string &str, char delimiter)
+char productions[MAXP][MAXP];
+int nProd;
+
+char nonT[MAXSYM];
+int nNonT = 0;
+
+char terms[MAXSYM];
+int nTerm = 0;
+
+int firstVT[MAXSYM][MAXSYM];
+int lastVT[MAXSYM][MAXSYM];
+
+char prec[MAXSYM][MAXSYM];
+
+int idxNT(char c)
 {
-    vector<string> tokens;
-    stringstream ss(str);
-    string token;
-    while (getline(ss, token, delimiter))
-    {
-        if (!token.empty())
-        {
-            tokens.push_back(token);
-        }
-    }
-    return tokens;
+    for (int i = 0; i < nNonT; ++i)
+        if (nonT[i] == c)
+            return i;
+    return -1;
+}
+int idxT(char c)
+{
+    for (int i = 0; i < nTerm; ++i)
+        if (terms[i] == c)
+            return i;
+    return -1;
+}
+void addNT(char c)
+{
+    if (!isupper(c))
+        return;
+    if (idxNT(c) == -1)
+        nonT[nNonT++] = c;
+}
+void addT(char c)
+{
+    if (c == '\0')
+        return;
+    if (isupper(c))
+        return;
+    if (c == '#')
+        return;
+    if (idxT(c) == -1)
+        terms[nTerm++] = c;
 }
 
-string trim(const string &str)
+void computeFirstVT()
 {
-    const string WHITESPACE = " \t\n\r\f\v";
-    size_t first = str.find_first_not_of(WHITESPACE);
-    if (string::npos == first)
+    int changed = 1;
+    while (changed)
     {
-        return str;
+        changed = 0;
+        for (int p = 0; p < nProd; ++p)
+        {
+            char A = productions[p][0];
+            char *rhs = productions[p] + 3;
+            if (!rhs[0])
+                continue;
+            int Ai = idxNT(A);
+
+            if (!isupper(rhs[0]))
+            {
+                int t = idxT(rhs[0]);
+                if (t != -1 && !firstVT[Ai][t])
+                {
+                    firstVT[Ai][t] = 1;
+                    changed = 1;
+                }
+            }
+            if (isupper(rhs[0]) && rhs[1] && !isupper(rhs[1]))
+            {
+                int t = idxT(rhs[1]);
+                if (t != -1 && !firstVT[Ai][t])
+                {
+                    firstVT[Ai][t] = 1;
+                    changed = 1;
+                }
+            }
+            if (isupper(rhs[0]))
+            {
+                int Bi = idxNT(rhs[0]);
+                if (Bi != -1)
+                {
+                    for (int t = 0; t < nTerm; ++t)
+                    {
+                        if (firstVT[Bi][t] && !firstVT[Ai][t])
+                        {
+                            firstVT[Ai][t] = 1;
+                            changed = 1;
+                        }
+                    }
+                }
+            }
+        }
     }
-    size_t last = str.find_last_not_of(WHITESPACE);
-    return str.substr(first, (last - first + 1));
 }
 
-class OperatorPrecedenceParser
+void computeLastVT()
 {
-private:
-    map<string, vector<vector<string>>> grammarRules;
-    set<string> nonTerminalsSet;
-    set<string> terminalsSet;
-    string startSymbol;
-
-    map<string, set<string>> leadingSet;
-    map<string, set<string>> trailingSet;
-    map<string, map<string, char>> precedenceTable;
-
-    void parseGrammar(const string &grammarLine)
+    int changed = 1;
+    while (changed)
     {
-        size_t arrowPos = grammarLine.find("->");
-        if (arrowPos == string::npos)
+        changed = 0;
+        for (int p = 0; p < nProd; ++p)
         {
-            cout << "Invalid grammar format. Use 'NT -> productions'." << endl;
-            return;
-        }
-        string lhs = trim(grammarLine.substr(0, arrowPos));
-        string rhs = trim(grammarLine.substr(arrowPos + 2));
+            char A = productions[p][0];
+            char *rhs = productions[p] + 3;
+            int len = strlen(rhs);
+            if (len == 0)
+                continue;
+            int Ai = idxNT(A);
 
-        startSymbol = lhs;
-        nonTerminalsSet.insert(lhs);
-
-        vector<string> productions = tokenize(rhs, '|');
-        for (const auto &prodStr : productions)
-        {
-            string trimmedProd = trim(prodStr);
-            vector<string> prodTokens = tokenize(trimmedProd, ' ');
-            grammarRules[lhs].push_back(prodTokens);
-            for (const auto &token : prodTokens)
+            if (!isupper(rhs[len - 1]))
             {
-                bool isNonTerminal = true;
-                for (char c : token)
+                int t = idxT(rhs[len - 1]);
+                if (t != -1 && !lastVT[Ai][t])
                 {
-                    if (!isupper(c))
-                    {
-                        isNonTerminal = false;
-                        break;
-                    }
-                }
-                if (isNonTerminal && !token.empty())
-                {
-                    nonTerminalsSet.insert(token);
-                }
-                else if (!token.empty())
-                {
-                    terminalsSet.insert(token);
+                    lastVT[Ai][t] = 1;
+                    changed = 1;
                 }
             }
-        }
-    }
-
-    void computeLeadingTrailingSets()
-    {
-        // Initialize
-        for (const auto &nt : nonTerminalsSet)
-        {
-            leadingSet[nt] = set<string>();
-            trailingSet[nt] = set<string>();
-        }
-
-        bool changed = true;
-        while (changed)
-        {
-            changed = false;
-            for (const auto &pair : grammarRules)
+            if (len >= 2 && isupper(rhs[len - 1]) && !isupper(rhs[len - 2]))
             {
-                string nt = pair.first;
-                for (const auto &prod : pair.second)
+                int t = idxT(rhs[len - 2]);
+                if (t != -1 && !lastVT[Ai][t])
                 {
-                    if (!prod.empty())
+                    lastVT[Ai][t] = 1;
+                    changed = 1;
+                }
+            }
+            if (isupper(rhs[len - 1]))
+            {
+                int Bi = idxNT(rhs[len - 1]);
+                if (Bi != -1)
+                {
+                    for (int t = 0; t < nTerm; ++t)
                     {
-                        // LEADING
-                        string firstSymbol = prod[0];
-                        size_t oldLeadingSize = leadingSet[nt].size();
-                        if (terminalsSet.count(firstSymbol))
+                        if (lastVT[Bi][t] && !lastVT[Ai][t])
                         {
-                            leadingSet[nt].insert(firstSymbol);
+                            lastVT[Ai][t] = 1;
+                            changed = 1;
                         }
-                        else if (nonTerminalsSet.count(firstSymbol))
-                        {
-                            leadingSet[nt].insert(leadingSet[firstSymbol].begin(), leadingSet[firstSymbol].end());
-                            if (prod.size() > 1 && terminalsSet.count(prod[1]))
-                            {
-                                leadingSet[nt].insert(prod[1]);
-                            }
-                        }
-                        if (leadingSet[nt].size() > oldLeadingSize)
-                            changed = true;
-                    }
-                    if (!prod.empty())
-                    {
-                        // TRAILING
-                        string lastSymbol = prod.back();
-                        size_t oldTrailingSize = trailingSet[nt].size();
-                        if (terminalsSet.count(lastSymbol))
-                        {
-                            trailingSet[nt].insert(lastSymbol);
-                        }
-                        else if (nonTerminalsSet.count(lastSymbol))
-                        {
-                            trailingSet[nt].insert(trailingSet[lastSymbol].begin(), trailingSet[lastSymbol].end());
-                            if (prod.size() > 1 && terminalsSet.count(prod[prod.size() - 2]))
-                            {
-                                trailingSet[nt].insert(prod[prod.size() - 2]);
-                            }
-                        }
-                        if (trailingSet[nt].size() > oldTrailingSize)
-                            changed = true;
                     }
                 }
             }
         }
     }
+}
 
-    void buildPrecedenceTable()
+void buildPrecedence()
+{
+    if (idxT('$') == -1)
+        terms[nTerm++] = '$';
+
+    for (int i = 0; i < nTerm; ++i)
+        for (int j = 0; j < nTerm; ++j)
+            prec[i][j] = ' ';
+
+    for (int p = 0; p < nProd; ++p)
     {
-        set<string> allTerminals = terminalsSet;
-        allTerminals.insert("$");
-        for (const auto &t1 : allTerminals)
+        char *rhs = productions[p] + 3;
+        int len = strlen(rhs);
+        for (int k = 0; k < len - 1; ++k)
         {
-            for (const auto &t2 : allTerminals)
+            char a = rhs[k], b = rhs[k + 1];
+            if (!isupper(a) && !isupper(b))
             {
-                precedenceTable[t1][t2] = ' ';
+                int ai = idxT(a), bi = idxT(b);
+                if (ai != -1 && bi != -1)
+                    prec[ai][bi] = '=';
             }
         }
+    }
 
-        for (const auto &pair : grammarRules)
+    for (int p = 0; p < nProd; ++p)
+    {
+        char *rhs = productions[p] + 3;
+        int len = strlen(rhs);
+        for (int k = 0; k < len - 1; ++k)
         {
-            for (const auto &prod : pair.second)
+            char a = rhs[k], B = rhs[k + 1];
+            if (!isupper(a) && isupper(B))
             {
-                for (size_t i = 0; i < prod.size() - 1; ++i)
+                int ai = idxT(a), Bi = idxNT(B);
+                if (ai != -1 && Bi != -1)
                 {
-                    string s1 = prod[i];
-                    string s2 = prod[i + 1];
-                    if (terminalsSet.count(s1) && terminalsSet.count(s2))
-                        precedenceTable[s1][s2] = '=';
-                    if (i < prod.size() - 2 && terminalsSet.count(s1) && nonTerminalsSet.count(s2) && terminalsSet.count(prod[i + 2]))
-                        precedenceTable[s1][prod[i + 2]] = '=';
-                    if (terminalsSet.count(s1) && nonTerminalsSet.count(s2))
-                    {
-                        for (const auto &term : leadingSet[s2])
-                            precedenceTable[s1][term] = '<';
-                    }
-                    if (nonTerminalsSet.count(s1) && terminalsSet.count(s2))
-                    {
-                        for (const auto &term : trailingSet[s1])
-                            precedenceTable[term][s2] = '>';
-                    }
+                    for (int t = 0; t < nTerm; ++t)
+                        if (firstVT[Bi][t])
+                            prec[ai][t] = '<';
                 }
             }
         }
-
-        map<string, int> precedenceMap;
-        precedenceMap["+"] = 1;
-        precedenceMap["-"] = 1;
-        precedenceMap["*"] = 2;
-        precedenceMap["/"] = 2;
-        vector<string> operators = {"+", "-", "*", "/"};
-
-        for (const auto &op1 : operators)
-        {
-            for (const auto &op2 : operators)
-            {
-                precedenceTable[op1][op2] = (precedenceMap[op1] >= precedenceMap[op2]) ? '>' : '<';
-            }
-        }
-
-        for (const auto &op : operators)
-        {
-            precedenceTable[op]["("] = '<';
-            precedenceTable[op]["id"] = '<';
-            precedenceTable[")"][op] = '>';
-            precedenceTable["id"][op] = '>';
-        }
-
-        precedenceTable["("]["("] = '<';
-        precedenceTable["("]["id"] = '<';
-        precedenceTable[")"][")"] = '>';
-        precedenceTable["id"][")"] = '>';
-        precedenceTable["("][")"] = '=';
-
-        for (const auto &term : leadingSet[startSymbol])
-            precedenceTable["$"][term] = '<';
-        for (const auto &term : trailingSet[startSymbol])
-            precedenceTable[term]["$"] = '>';
-
-        for (const auto &op : operators)
-        {
-            precedenceTable[")"][op] = '>';
-            precedenceTable[op][")"] = '>';
-            precedenceTable["$"][")"] = ' ';
-            precedenceTable["("]["$"] = ' ';
-        }
     }
 
-    void printLeadingTrailingSets()
+    for (int p = 0; p < nProd; ++p)
     {
-
-        cout << left << setw(15) << "NonTerminal" << setw(30) << "LEADING" << setw(30) << "TRAILING" << endl;
-        cout << string(75, '-') << endl;
-        for (const auto &nt : nonTerminalsSet)
+        char *rhs = productions[p] + 3;
+        int len = strlen(rhs);
+        for (int k = 0; k < len - 1; ++k)
         {
-            cout << left << setw(15) << nt;
-            string leadStr = "{ ";
-            for (const auto &term : leadingSet[nt])
-                leadStr += term + ", ";
-            if (leadStr.length() > 2)
+            char B = rhs[k], a = rhs[k + 1];
+            if (isupper(B) && !isupper(a))
             {
-                leadStr.pop_back();
-                leadStr.pop_back();
-            }
-            leadStr += " }";
-            cout << left << setw(30) << leadStr;
-            string trailStr = "{ ";
-            for (const auto &term : trailingSet[nt])
-                trailStr += term + ", ";
-            if (trailStr.length() > 2)
-            {
-                trailStr.pop_back();
-                trailStr.pop_back();
-            }
-            trailStr += " }";
-            cout << left << setw(30) << trailStr << endl;
-        }
-    }
-
-    void printPrecedenceTable()
-    {
-        cout << "\nOperator Precedence Table:\n";
-        vector<string> termList = {"id", "+", "-", "*", "/", "(", ")", "$"};
-        cout << setw(6) << " ";
-        for (const auto &term : termList)
-        {
-            cout << setw(6) << term;
-        }
-        cout << endl
-             << string(6 * (termList.size() + 1), '-') << endl;
-
-        for (const auto &rowTerm : termList)
-        {
-            cout << setw(6) << rowTerm;
-            for (const auto &colTerm : termList)
-            {
-                char rel = ' ';
-                if (precedenceTable.count(rowTerm) && precedenceTable.at(rowTerm).count(colTerm))
+                int ai = idxT(a), Bi = idxNT(B);
+                if (ai != -1 && Bi != -1)
                 {
-                    rel = precedenceTable.at(rowTerm).at(colTerm);
+                    for (int t = 0; t < nTerm; ++t)
+                        if (lastVT[Bi][t])
+                            prec[t][ai] = '>';
                 }
-                cout << setw(6) << rel;
             }
-            cout << endl;
         }
     }
 
-public:
-    void setup()
+    for (int p = 0; p < nProd; ++p)
     {
-        cout << "Enter the grammar (A-> productions), e.g. E->id + E | id :\n";
-        string grammarLine;
-        getline(cin, grammarLine);
-        parseGrammar(grammarLine);
-        computeLeadingTrailingSets();
-        buildPrecedenceTable();
-        printLeadingTrailingSets();
-        printPrecedenceTable();
+        char *rhs = productions[p] + 3;
+        int len = strlen(rhs);
+        for (int k = 0; k < len - 2; ++k)
+        {
+            char a = rhs[k], B = rhs[k + 1], c = rhs[k + 2];
+            if (!isupper(a) && isupper(B) && !isupper(c))
+            {
+                int ai = idxT(a), ci = idxT(c);
+                if (ai != -1 && ci != -1)
+                    prec[ai][ci] = '=';
+            }
+        }
     }
 
-    void parse(const string &inputStr)
+    char start = productions[0][0];
+    int starti = idxNT(start);
+    int doll = idxT('$');
+    if (starti != -1 && doll != -1)
     {
-        cout << "\nParsing Input String: \"" << inputStr << "\"\n";
-        cout << left << setw(45) << "STACK" << setw(40) << "INPUT" << "ACTION" << endl;
-        cout << string(95, '-') << endl;
-
-        vector<string> inputBuffer = tokenize(inputStr, ' ');
-        inputBuffer.push_back("$");
-
-        vector<string> stack;
-        stack.push_back("$");
-
-        while (true)
+        for (int t = 0; t < nTerm; ++t)
         {
-            string stackStr;
-            for (const auto &s : stack)
-                stackStr += s + " ";
-            string inputStrRem;
-            for (const auto &s : inputBuffer)
-                inputStrRem += s + " ";
-            cout << left << setw(45) << stackStr << setw(40) << inputStrRem;
+            if (firstVT[starti][t])
+                prec[doll][t] = '<';
+            if (lastVT[starti][t])
+                prec[t][doll] = '>';
+        }
+    }
+}
 
-            string topTerminal = "$";
-            for (int i = (int)stack.size() - 1; i >= 0; --i)
+int topmostTerminalIndex(char stack[], int top)
+{
+    for (int i = top; i >= 0; i--)
+    {
+        if (!isupper(stack[i]))
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void parseInput(char input[])
+{
+    char stack[MAXLEN];
+    int top = 0;
+    stack[0] = '$';
+    stack[1] = '\0';
+    int ip = 0;
+
+    printf("\nParsing trace:\n");
+    printf("Stack\t\tInput\t\tAction\n");
+
+    while (1)
+    {
+        int tpos = topmostTerminalIndex(stack, top);
+        char a = stack[tpos];
+        char b = input[ip];
+
+        if (a == '$' && b == '$')
+        {
+            printf("%s\t\t%s\t\tAccepted\n", stack, input + ip);
+            break;
+        }
+
+        int ai = idxT(a), bi = idxT(b);
+
+        printf("%s\t\t%s\t\t", stack, input + ip);
+
+        if (ai == -1 || bi == -1)
+        {
+            printf("ERROR: terminal not found\n");
+            break;
+        }
+        char rel = prec[ai][bi];
+
+        if (rel == ' ')
+        {
+            printf("Error: no relation (%c, %c)\n", a, b);
+            break;
+        }
+
+        if (rel == '<' || rel == '=')
+        {
+            printf("Shift %c\n", b);
+            stack[++top] = b;
+            stack[top + 1] = '\0';
+            ip++;
+        }
+        else if (rel == '>')
+        {
+            printf("Reduce\n");
+            int i = tpos;
+            while (i > 0)
             {
-                if (terminalsSet.count(stack[i]) || stack[i] == "$")
+                int j = topmostTerminalIndex(stack, i - 1);
+                if (j == -1)
                 {
-                    topTerminal = stack[i];
+                    top = 0;
+                    stack[top] = 'N';
+                    stack[top + 1] = '\0';
                     break;
                 }
-            }
-            string currentInput = inputBuffer.front();
+                char terminal_j = stack[j];
+                char terminal_i = stack[i];
+                int j_idx = idxT(terminal_j);
+                int i_idx = idxT(terminal_i);
 
-            if (topTerminal == "$" && currentInput == "$")
-            {
-                cout << "Accept" << endl;
-                cout << "\nString successfully parsed.\n"
-                     << endl;
-                return;
-            }
-
-            char relation = ' ';
-            if (precedenceTable.count(topTerminal) && precedenceTable.at(topTerminal).count(currentInput))
-            {
-                relation = precedenceTable.at(topTerminal).at(currentInput);
-            }
-
-            if (relation == '<' || relation == '=')
-            {
-                cout << "Shift" << endl;
-                stack.push_back(currentInput);
-                inputBuffer.erase(inputBuffer.begin());
-            }
-            else if (relation == '>')
-            {
-                cout << "Reduce";
-
-                int handleStartIndex = 1;
-
-                int topTerminalIndex = -1;
-                for (int i = (int)stack.size() - 1; i >= 0; --i)
+                if (j_idx != -1 && i_idx != -1 && prec[j_idx][i_idx] == '<')
                 {
-                    if (terminalsSet.count(stack[i]))
-                    {
-                        topTerminalIndex = i;
-                        break;
-                    }
+                    top = j + 1;
+                    stack[top] = 'N';
+                    stack[top + 1] = '\0';
+                    break;
                 }
-
-                if (topTerminalIndex != -1)
-                {
-                    for (int i = topTerminalIndex; i > 0; --i)
-                    {
-                        if (terminalsSet.count(stack[i]))
-                        {
-                            string prevTerminal = "$";
-                            int prevTerminalIndex = 0;
-                            for (int j = i - 1; j >= 0; --j)
-                            {
-                                if (terminalsSet.count(stack[j]) || stack[j] == "$")
-                                {
-                                    prevTerminal = stack[j];
-                                    prevTerminalIndex = j;
-                                    break;
-                                }
-                            }
-                            if (precedenceTable.at(prevTerminal).at(stack[i]) == '<')
-                            {
-                                handleStartIndex = prevTerminalIndex + 1;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                string handleStr;
-                for (size_t i = handleStartIndex; i < stack.size(); ++i)
-                    handleStr += stack[i] + " ";
-                cout << " (handle: " << handleStr << ")" << endl;
-
-                stack.erase(stack.begin() + handleStartIndex, stack.end());
-                stack.push_back(startSymbol);
-            }
-            else
-            {
-                cout << "Error" << endl;
-                cout << "\nSyntax Error: No relation between stack top terminal '" << topTerminal << "' and input '" << currentInput << "'" << endl;
-                cout << "\nString rejected.\n"
-                     << endl;
-                return;
+                i = j;
             }
         }
     }
-};
+}
 
 int main()
 {
-    OperatorPrecedenceParser parser;
-    parser.setup();
+    printf("Enter number of productions: ");
+    scanf("%d", &nProd);
+    getchar();
 
-    while (true)
+    printf("Enter productions (A->rhs):\n");
+    for (int i = 0; i < nProd; ++i)
     {
-        cout << "\nEnter an input string to parse (or '0' to exit):" << endl;
-        string inputLine;
-        getline(cin, inputLine);
-
-        if (inputLine == "0")
+        fgets(productions[i], sizeof(productions[i]), stdin);
+        productions[i][strcspn(productions[i], "\n")] = '\0';
+        if (productions[i][0] == '\0')
         {
-            break;
+            i--;
+            continue;
         }
-        parser.parse(inputLine);
+        addNT(productions[i][0]);
+        for (int j = 3; productions[i][j]; ++j)
+        {
+            addNT(productions[i][j]);
+            addT(productions[i][j]);
+        }
     }
 
+    computeFirstVT();
+    computeLastVT();
+    buildPrecedence();
+
+    printf("\nFIRSTVT sets:\n");
+    for (int nt = 0; nt < nNonT; ++nt)
+    {
+        printf("%c: { ", nonT[nt]);
+        for (int t = 0; t < nTerm; ++t)
+            if (firstVT[nt][t])
+                printf("%c ", terms[t]);
+        printf("}\n");
+    }
+    printf("\nLASTVT sets:\n");
+    for (int nt = 0; nt < nNonT; ++nt)
+    {
+        printf("%c: { ", nonT[nt]);
+        for (int t = 0; t < nTerm; ++t)
+            if (lastVT[nt][t])
+                printf("%c ", terms[t]);
+        printf("}\n");
+    }
+
+    printf("\nOperator Precedence Table:\n    ");
+    for (int t = 0; t < nTerm; ++t)
+        printf(" %c ", terms[t]);
+    printf("\n");
+    for (int i = 0; i < nTerm; ++i)
+    {
+        printf("%c |", terms[i]);
+        for (int j = 0; j < nTerm; ++j)
+            printf(" %c ", prec[i][j]);
+        printf("\n");
+    }
+
+    char input[MAXLEN];
+    printf("\nEnter input string: ");
+    scanf("%s", input);
+    strcat(input, "$");
+
+    parseInput(input);
     return 0;
 }
